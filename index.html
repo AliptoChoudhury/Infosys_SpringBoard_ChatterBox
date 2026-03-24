@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatterbox Final</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+    <h2>Chatterbox Final Milestone</h2>
+
+    <label for="room">Select Room:</label>
+    <select id="room">
+        <option value="general">General</option>
+        <option value="tech">Tech</option>
+        <option value="fun">Fun</option>
+    </select>
+
+    <div id="chat"></div>
+    <div id="typing"></div>
+
+    <input id="msg" placeholder="Type message">
+    <button onclick="sendMessage()">Send</button>
+
+    <script src="/static/script.js"></script>
+    <div class="chat-container"></div>
+    
+
+</body>
+
+</html>
