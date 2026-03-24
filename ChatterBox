@@ -1,55 +1,101 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 import uvicorn
-from typing import List
 
 app = FastAPI()
 
+# Serve static files (CSS, JS)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# ----------------------------------------
-# Connection Manager
-# ----------------------------------------
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: List[WebSocket] = []
-
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
-        print(f"Client connected. Total: {len(self.active_connections)}")
-
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
-        print(f"Client disconnected. Total: {len(self.active_connections)}")
-
-    async def send_personal_message(self, message: str, websocket: WebSocket):
-        await websocket.send_text(message)
-
-    async def broadcast(self, message: str):
-        for connection in self.active_connections:
-            await connection.send_text(message)
+# -----------------------------
+# Data Structures
+# -----------------------------
+active_connections = []
+usernames = {}
+rooms = {}
 
 
-manager = ConnectionManager()
-
-
+# -----------------------------
+# Serve HTML Page
+# -----------------------------
 @app.get("/")
-async def read_root():
-    return {"message": "Chatterbox WebSocket Server Running"}
+async def home():
+    with open("templates/index.html", "r") as f:
+        html = f.read()
+    return HTMLResponse(html)
 
 
+# -----------------------------
+# Broadcast function
+# -----------------------------
+async def broadcast(room, data):
+    for connection in active_connections:
+        if rooms.get(connection) == room:
+            await connection.send_json(data)
+
+
+# -----------------------------
+# WebSocket Endpoint
+# -----------------------------
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
+async def websocket_endpoint(ws: WebSocket):
+    await ws.accept()
 
     try:
-        while True:
-            message = await websocket.receive_text()
-            print(f"Received: {message}")
+        data = await ws.receive_json()
 
-            # Echo back
-            await manager.send_personal_message(
-                f"Server: You said -> {message}", websocket
-            )
+        username = data.get("username", "Anonymous")
+        room = data.get("room", "general")
+
+        active_connections.append(ws)
+        usernames[ws] = username
+        rooms[ws] = room
+
+        await broadcast(room, {
+            "type": "system",
+            "message": f"{username} joined {room} 🟢"
+        })
+
+        while True:
+            data = await ws.receive_json()
+
+            if data["type"] == "chat":
+                await broadcast(room, {
+                    "type": "chat",
+                    "username": username,
+                    "message": data["message"]
+                })
+
+            if data["type"] == "typing":
+                await broadcast(room, {
+                    "type": "typing",
+                    "username": username
+                })
+
+            if data["type"] == "stop_typing":
+                await broadcast(room, {
+                    "type": "stop_typing"
+                })
 
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        left_user = usernames.get(ws, "Someone")
+        room = rooms.get(ws)
+
+        if ws in active_connections:
+            active_connections.remove(ws)
+
+        usernames.pop(ws, None)
+        rooms.pop(ws, None)
+
+        await broadcast(room, {
+            "type": "system",
+            "message": f"{left_user} left {room} ❌"
+        })
+
+
+# -----------------------------
+# Run Server
+# -----------------------------
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="localhost", port=8000, reload=True)
